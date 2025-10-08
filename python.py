@@ -222,12 +222,18 @@ def chat_with_gemini_conversational(prompt, api_key, history, processed_data=Non
         
         if processed_data is not None:
             # Gửi toàn bộ dữ liệu đã xử lý dưới dạng markdown cho mô hình
+            # Sử dụng to_markdown(index=False) cho dễ đọc
             context_data = f"\n\nDữ liệu tài chính hiện tại của người dùng đã được xử lý:\n{processed_data.to_markdown(index=False)}\n\n"
             system_parts.append({"text": context_data})
 
         # Cấu trúc nội dung cho API
         contents = []
 
+        # Thêm System Instruction
+        # Trong thư viện google-genai, việc định nghĩa vai trò trong contents
+        # đã tự động áp dụng System Instruction nếu không dùng Conversation service
+        # Cách sau đây là cách truyền ngữ cảnh và lịch sử trong 1 lần gọi
+        
         # Thêm System Instruction (sử dụng như tin nhắn đầu tiên)
         contents.append({
             "role": "user", # Đặt System Instruction vào vai trò 'user' đầu tiên để truyền ngữ cảnh
@@ -245,10 +251,10 @@ def chat_with_gemini_conversational(prompt, api_key, history, processed_data=Non
             if message["role"] in ["user", "assistant"]: 
                 contents.append({"role": message["role"], "parts": [{"text": message["content"]}]})
         
-        # 3. Thêm prompt hiện tại của người dùng
-        # Prompt người dùng đã được thêm vào lịch sử ở bước gọi trước, nên ta chỉ cần đảm bảo nó là tin nhắn cuối cùng trong contents.
-        # Lưu ý: Bằng cách thêm prompt vào st.session_state["messages"] ngay trước khi gọi hàm này, nó đã nằm trong chat_history_for_api.
-        
+        # 3. Thêm prompt hiện tại của người dùng (nếu nó chưa được thêm vào history trước đó)
+        # Vì prompt đã được thêm vào st.session_state["messages"] trước khi gọi hàm này, 
+        # nó đã nằm trong chat_history_for_api, nên ta không cần thêm lại.
+
         # Gọi API
         response = client.models.generate_content(
             model=model_name,
@@ -263,28 +269,9 @@ def chat_with_gemini_conversational(prompt, api_key, history, processed_data=Non
 
 
 # Hiển thị tất cả tin nhắn trong st.session_state (trong sidebar)
-# Sử dụng st.container() để giữ vị trí khung chat cố định (nếu cần scroll)
-st.sidebar.markdown(
-    """
-    <style>
-    .stChatInput {
-        position: sticky;
-        bottom: 0;
-        background: white; /* Đảm bảo ô input không bị trong suốt */
-        padding: 10px 0;
-        z-index: 10;
-    }
-    /* Chỉnh cho khung chat có thể cuộn */
-    .css-1lcbmhc {
-        flex-direction: column-reverse; /* Đảo ngược thứ tự để tin nhắn mới nhất nằm dưới */
-    }
-    </style>
-    """,
-    unsafe_allow_html=True
-)
 
 # Lấy history đã lọc (chỉ user/assistant) để hiển thị
-# Tin nhắn system context không được hiển thị
+# Tin nhắn system context không được hiển thị (tức tin nhắn chào mừng là tin nhắn 0)
 display_history = [m for m in st.session_state["messages"] if m["role"] in ["user", "assistant"]]
 
 for message in display_history:
@@ -319,3 +306,4 @@ if prompt := st.sidebar.chat_input("Hỏi Gemini về báo cáo này..."):
     
     # 4. Thêm tin nhắn AI vào lịch sử
     st.session_state["messages"].append({"role": "assistant", "content": ai_response})
+    # Sau khi xử lý xong, Streamlit sẽ tự động rerun và hiển thị lại toàn bộ lịch sử
