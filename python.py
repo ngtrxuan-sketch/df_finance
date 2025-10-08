@@ -50,7 +50,7 @@ def process_financial_data(df):
     
     return df
 
-# --- Hàm gọi API Gemini cho Phân tích Tài chính (Chức năng 5 cũ) ---
+# --- Hàm gọi API Gemini cho Phân tích Tài chính TỰ ĐỘNG (Chức năng 5 cũ) ---
 def get_ai_analysis(data_for_ai, api_key):
     """Gửi dữ liệu phân tích đến Gemini API và nhận nhận xét."""
     try:
@@ -203,7 +203,7 @@ if "messages" not in st.session_state:
 
 # 2. Hàm gọi API Gemini cho Chat
 def chat_with_gemini_conversational(prompt, api_key, history, processed_data=None):
-    """Gửi tin nhắn và lịch sử trò chuyện đến Gemini API và nhận phản hồi."""
+    """Gửi tin nhắn và lịch sử trò chuyện đến Gemini API và nhận phản hồi, có kèm ngữ cảnh dữ liệu."""
     try:
         if not api_key:
             return "Lỗi: Không tìm thấy Khóa API. Vui lòng cấu hình Khóa 'GEMINI_API_KEY' trong Streamlit Secrets."
@@ -225,25 +225,29 @@ def chat_with_gemini_conversational(prompt, api_key, history, processed_data=Non
             context_data = f"\n\nDữ liệu tài chính hiện tại của người dùng đã được xử lý:\n{processed_data.to_markdown(index=False)}\n\n"
             system_parts.append({"text": context_data})
 
-        contents = [
-            {
-                "role": "system",
-                "parts": system_parts
-            }
-        ]
+        # Cấu trúc nội dung cho API
+        contents = []
+
+        # Thêm System Instruction (sử dụng như tin nhắn đầu tiên)
+        contents.append({
+            "role": "user", # Đặt System Instruction vào vai trò 'user' đầu tiên để truyền ngữ cảnh
+            "parts": system_parts
+        })
+
 
         # 2. Thêm lịch sử trò chuyện (chuyển đổi định dạng Streamlit sang định dạng Gemini)
-        # Bắt đầu từ tin nhắn thứ hai trong history (bỏ qua System Prompt ban đầu của assistant)
-        for message in history:
+        # Bỏ qua tin nhắn chào mừng ban đầu của assistant khi xây dựng lịch sử chính thức
+        # Lịch sử chat được xây dựng từ tin nhắn thứ 2 trở đi trong st.session_state["messages"]
+        chat_history_for_api = st.session_state["messages"][1:]
+
+        for message in chat_history_for_api:
             # Chỉ thêm các tin nhắn có vai trò 'user' hoặc 'assistant'
             if message["role"] in ["user", "assistant"]: 
                 contents.append({"role": message["role"], "parts": [{"text": message["content"]}]})
         
         # 3. Thêm prompt hiện tại của người dùng
-        # Prompt người dùng đã được thêm vào lịch sử ở bước trước, nhưng để gọi API ta cần format lại contents
-        
-        # Lấy prompt cuối cùng của user từ st.session_state để tạo tin nhắn mới
-        current_user_prompt = history[-1]["content"] if history[-1]["role"] == "user" else prompt
+        # Prompt người dùng đã được thêm vào lịch sử ở bước gọi trước, nên ta chỉ cần đảm bảo nó là tin nhắn cuối cùng trong contents.
+        # Lưu ý: Bằng cách thêm prompt vào st.session_state["messages"] ngay trước khi gọi hàm này, nó đã nằm trong chat_history_for_api.
         
         # Gọi API
         response = client.models.generate_content(
@@ -260,15 +264,33 @@ def chat_with_gemini_conversational(prompt, api_key, history, processed_data=Non
 
 # Hiển thị tất cả tin nhắn trong st.session_state (trong sidebar)
 # Sử dụng st.container() để giữ vị trí khung chat cố định (nếu cần scroll)
-chat_container = st.sidebar.container()
+st.sidebar.markdown(
+    """
+    <style>
+    .stChatInput {
+        position: sticky;
+        bottom: 0;
+        background: white; /* Đảm bảo ô input không bị trong suốt */
+        padding: 10px 0;
+        z-index: 10;
+    }
+    /* Chỉnh cho khung chat có thể cuộn */
+    .css-1lcbmhc {
+        flex-direction: column-reverse; /* Đảo ngược thứ tự để tin nhắn mới nhất nằm dưới */
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
 
-with chat_container:
-    # Lấy history đã lọc (chỉ user/assistant) để hiển thị
-    display_history = [m for m in st.session_state["messages"] if m["role"] in ["user", "assistant"]]
+# Lấy history đã lọc (chỉ user/assistant) để hiển thị
+# Tin nhắn system context không được hiển thị
+display_history = [m for m in st.session_state["messages"] if m["role"] in ["user", "assistant"]]
 
-    for message in display_history:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
+for message in display_history:
+    # Sử dụng st.sidebar.chat_message
+    with st.sidebar.chat_message(message["role"]):
+        st.markdown(message["content"])
 
 # Xử lý input từ người dùng (luôn đặt ngoài container để nó ở cuối sidebar)
 if prompt := st.sidebar.chat_input("Hỏi Gemini về báo cáo này..."):
@@ -291,7 +313,7 @@ if prompt := st.sidebar.chat_input("Hỏi Gemini về báo cáo này..."):
                 prompt, 
                 api_key, 
                 st.session_state["messages"], # Gửi toàn bộ lịch sử
-                df_processed # Gửi DataFrame đã xử lý (có thể là None)
+                df_processed # Gửi DataFrame đã xử lý (có thể là None nếu chưa upload file)
             )
             st.markdown(ai_response)
     
